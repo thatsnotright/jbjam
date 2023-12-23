@@ -1,7 +1,8 @@
 package jitterbuffer
 
 import (
-	"github.com/pion/interceptor"
+  "math"
+
 	"github.com/pion/rtp"
 )
 
@@ -9,7 +10,7 @@ type JitterBufferState uint16
 
 const (
 	Buffering JitterBufferState = iota
-	Emitting  JitterBufferState
+	Emitting  
 )
 
 func (jbs JitterBufferState) String() string {
@@ -19,10 +20,11 @@ func (jbs JitterBufferState) String() string {
 	case Emitting:
 		return "Emitting"
 	}
+  return "unknown"
 }
 
 type JitterBufferOption struct {
-	initialLatency unit16
+	initialLatency uint32
 }
 
 type Option func(jb *JitterBuffer)
@@ -45,8 +47,8 @@ type JitterBufferStats struct {
 	max_jitter         float32
 }
 
-func New(opts ...Option) JitterBuffer {
-	jb := &JitterBuffer{state: JitterBufferState.Buffering, stats: {0, 0, 0, .0, 0}}
+func New(opts ...Option) *JitterBuffer {
+	jb := &JitterBuffer{state: Buffering, stats: JitterBufferStats{0, 0, 0, .0, 0}}
 	for _, o := range opts {
 		o(jb)
 	}
@@ -57,7 +59,8 @@ func (jb *JitterBuffer) Push(packet *rtp.Packet) {
 	jb.packets[packet.SequenceNumber] = packet
 	if packet.SequenceNumber != jb.last_sequence+1 &&
 		// we are wrapping around
-		(jb.last_sequnce != math.MaxUint16 && packet.SequenceNumber == 0) {
+		(jb.last_sequence != math.MaxUint16 && packet.SequenceNumber == 0) {
 		jb.stats.overflow_count++
 	}
+  jb.last_sequence = packet.SequenceNumber
 }
