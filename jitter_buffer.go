@@ -2,6 +2,7 @@ package jitterbuffer
 
 import (
 	"errors"
+  "sync"
 	"github.com/pion/rtp"
 	"math"
 )
@@ -48,6 +49,7 @@ type JitterBuffer struct {
 	max_depth           int
 	stats               JitterBufferStats
 	listeners           []JitterBufferEventListener
+  mutex               sync.Mutex
 }
 
 type JitterBufferStats struct {
@@ -59,6 +61,7 @@ type JitterBufferStats struct {
 	max_jitter         float32
 }
 
+// New will initialize a jitter buffer and its associated statistics
 func New(opts ...Option) *JitterBuffer {
 	jb := &JitterBuffer{state: Buffering, stats: JitterBufferStats{0, 0, 0, 0, .0, .0}}
 	for _, o := range opts {
@@ -67,6 +70,8 @@ func New(opts ...Option) *JitterBuffer {
 	return jb
 }
 
+// The jitter buffer may emit events correspnding, interested listerns should 
+// look at JitterBufferEvent for available events
 func (jb *JitterBuffer) Listen(event JitterBufferEvent, cb JitterBufferEventListener) {
 	jb.listeners = append(jb.listeners, cb)
 }
@@ -82,7 +87,12 @@ func (jb *JitterBuffer) updateStats(last_packet_seq_no uint16) {
 
 }
 
+// Push an RTP packet into the jitter buffer, this does not clone
+// the data so if the memory is expected to be reused, the caller should
+// take this in to account and pass a copy of the packet they wish to buffer
 func (jb *JitterBuffer) Push(packet *rtp.Packet) {
+  jb.mutex.Lock()
+  defer jb.mutex.Unlock()
   if jb.packets[packet.SequenceNumber] != nil {
     jb.stats.overflow_count ++
     jb.emit(BufferOverflow)
@@ -106,17 +116,26 @@ func (jb *JitterBuffer) updateState() {
 	}
 }
 
+// Peek at the packet which is either:
+//   At the playout head when we are emitting, and the playoutHead flag is true
+// or else
+//   At the last sequence received
 func (jb *JitterBuffer) Peek(playoutHead bool) (*rtp.Packet, error) {
+  jb.mutex.Lock()
+  defer jb.mutex.Unlock()
 	if jb.buffer_length < 1 {
 		return nil, errors.New("Invalid Peek: Empty jitter buffer")
 	}
-	if playoutHead {
+	if playoutHead && jb.state == Emitting {
 		return jb.packets[jb.playout_head], nil
 	}
 	return jb.packets[jb.last_sequence], nil
 }
 
+// Pop an RTP packet from the jitter buffer at the current playout head
 func (jb *JitterBuffer) Pop() (*rtp.Packet, error) {
+  jb.mutex.Lock()
+  defer jb.mutex.Unlock()
 	if jb.state != Emitting {
 		return nil, errors.New("Attempt to pop while buffering")
 	}
