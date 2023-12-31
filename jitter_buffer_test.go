@@ -20,5 +20,17 @@ func TestJitterBuffer(t *testing.T) {
 		jb.Push(&rtp.Packet{Header: rtp.Header{SequenceNumber: 5012, Timestamp: 512}, Payload: []byte{0x02}})
 
 		assert.Equal(jb.last_sequence, uint16(5012))
+		assert.Equal(jb.stats.out_of_order_count, uint32(1))
+		assert.Equal(jb.buffer_length, uint16(4))
+		assert.Equal(jb.last_sequence, uint16(5012))
+	})
+
+	t.Run("Appends packets and updates stats on gaps", func(t *testing.T) {
+		jb := New()
+		for i := 0; i < 100; i++ {
+			jb.Push(&rtp.Packet{Header: rtp.Header{SequenceNumber: uint16(5012 + i), Timestamp: uint32(512 + i)}, Payload: []byte{0x02}})
+		}
+		assert.Equal(jb.buffer_length, uint16(100))
+		assert.Equal(jb.state, Emitting)
 	})
 }

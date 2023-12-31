@@ -15,10 +15,10 @@ const (
 	Emitting
 )
 const (
-	StartBuffering JitterBufferEvent = "startBuffering"
-	BeginPlayback                    = "playing"
-  BufferUnderflow = "underflow"
-  BufferOverflow = "overflow"
+	StartBuffering  JitterBufferEvent = "startBuffering"
+	BeginPlayback                     = "playing"
+	BufferUnderflow                   = "underflow"
+	BufferOverflow                    = "overflow"
 )
 
 func (jbs JitterBufferState) String() string {
@@ -54,12 +54,13 @@ type JitterBufferStats struct {
 	out_of_order_count uint32
 	empty_count        uint32
 	underflow_count    uint32
+  overflow_count     uint32
 	jitter             float32
 	max_jitter         float32
 }
 
 func New(opts ...Option) *JitterBuffer {
-	jb := &JitterBuffer{state: Buffering, stats: JitterBufferStats{0, 0, 0, .0, 0}}
+	jb := &JitterBuffer{state: Buffering, stats: JitterBufferStats{0, 0, 0, 0, .0, .0}}
 	for _, o := range opts {
 		o(jb)
 	}
@@ -71,21 +72,24 @@ func (jb *JitterBuffer) Listen(event JitterBufferEvent, cb JitterBufferEventList
 }
 
 func (jb *JitterBuffer) updateStats(last_packet_seq_no uint16) {
-   // If we have at least one packet, and the next packet being pushed in is not
-  // at the expected sequence number increment the out of order count
-  if jb.buffer_length > 0 && last_packet_seq_no != ((jb.last_sequence + 1) % math.MaxUint16) {
-    jb.stats.out_of_order_count ++
-  }
+	// If we have at least one packet, and the next packet being pushed in is not
+	// at the expected sequence number increment the out of order count
+	if jb.buffer_length > 0 && last_packet_seq_no != ((jb.last_sequence+1)%math.MaxUint16) {
+		jb.stats.out_of_order_count++
+	}
 	jb.last_sequence = last_packet_seq_no
 	jb.buffer_length++
-	 
+
 }
 
 func (jb *JitterBuffer) Push(packet *rtp.Packet) {
+  if jb.packets[packet.SequenceNumber] != nil {
+    jb.stats.overflow_count ++
+    jb.emit(BufferOverflow)
+  }
 	jb.packets[packet.SequenceNumber] = packet
-	
-  jb.updateStats(packet.SequenceNumber)
-  jb.updateState()
+	jb.updateStats(packet.SequenceNumber)
+	jb.updateState()
 }
 
 func (jb *JitterBuffer) emit(event JitterBufferEvent) {
@@ -113,17 +117,17 @@ func (jb *JitterBuffer) Peek(playoutHead bool) (*rtp.Packet, error) {
 }
 
 func (jb *JitterBuffer) Pop() (*rtp.Packet, error) {
-  if jb.state != Emitting {
-    return nil, errors.New("Attempt to pop while buffering")
-  }
-  if jb.packets[jb.playout_head] == nil {
-    jb.stats.underflow_count ++
-    jb.emit(BufferUnderflow)
-  }
-  var packet = jb.packets[jb.playout_head]
-  jb.packets[jb.playout_head] = nil
-  jb.buffer_length --
-  jb.playout_head = (jb.playout_head +1 ) % math.MaxUint16
-  jb.updateState() 
-  return packet, nil
+	if jb.state != Emitting {
+		return nil, errors.New("Attempt to pop while buffering")
+	}
+	if jb.packets[jb.playout_head] == nil {
+		jb.stats.underflow_count++
+		jb.emit(BufferUnderflow)
+	}
+	var packet = jb.packets[jb.playout_head]
+	jb.packets[jb.playout_head] = nil
+	jb.buffer_length--
+	jb.playout_head = (jb.playout_head + 1) % math.MaxUint16
+	jb.updateState()
+	return packet, nil
 }
