@@ -43,6 +43,7 @@ type JitterBuffer struct {
 	last_sequence       uint16
 	buffer_length       uint16
 	playout_head        uint16
+  playout_ready       bool
 	state               JitterBufferState
 	sample_rate         uint16
 	payload_sample_rate int
@@ -96,6 +97,9 @@ func (jb *JitterBuffer) Push(packet *rtp.Packet) {
   if jb.packets[packet.SequenceNumber] != nil {
     jb.stats.overflow_count ++
     jb.emit(BufferOverflow)
+  }
+  if !jb.playout_ready && jb.buffer_length == 0 {
+    jb.playout_head = packet.SequenceNumber
   }
 	jb.packets[packet.SequenceNumber] = packet
 	jb.updateStats(packet.SequenceNumber)

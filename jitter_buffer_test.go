@@ -4,6 +4,7 @@ import (
 	"github.com/pion/rtp"
 	"github.com/stretchr/testify/assert"
 	"testing"
+  "math"
 )
 
 func TestJitterBuffer(t *testing.T) {
@@ -25,12 +26,40 @@ func TestJitterBuffer(t *testing.T) {
 		assert.Equal(jb.last_sequence, uint16(5012))
 	})
 
-	t.Run("Appends packets and updates stats on gaps", func(t *testing.T) {
+	t.Run("Appends packets and begins playout", func(t *testing.T) {
 		jb := New()
 		for i := 0; i < 100; i++ {
 			jb.Push(&rtp.Packet{Header: rtp.Header{SequenceNumber: uint16(5012 + i), Timestamp: uint32(512 + i)}, Payload: []byte{0x02}})
 		}
 		assert.Equal(jb.buffer_length, uint16(100))
 		assert.Equal(jb.state, Emitting)
+    assert.Equal(jb.playout_head, uint16(5012))
+    head, err := jb.Pop()
+    assert.Equal(head.SequenceNumber, uint16(5012))
+    assert.Equal(err, nil)
 	})
+	t.Run("Wraps playout correctly", func(t *testing.T) {
+		jb := New()
+		for i := 0; i < 100; i++ {
+      
+      sqnum := uint16((math.MaxUint16 - 32 + i) % math.MaxUint16)
+			jb.Push(&rtp.Packet{Header: rtp.Header{SequenceNumber: sqnum, Timestamp: uint32(512 + i)}, Payload: []byte{0x02}})
+		}
+		assert.Equal(jb.buffer_length, uint16(100))
+		assert.Equal(jb.state, Emitting)
+    assert.Equal(jb.playout_head, uint16(math.MaxUint16 - 32))
+    head, err := jb.Pop()
+    assert.Equal(head.SequenceNumber, uint16(math.MaxUint16 - 32))
+    assert.Equal(err, nil)
+    for i := 0; i < 100; i++ {
+      head, err := jb.Pop()
+      if i < 99 {
+        assert.Equal(head.SequenceNumber, uint16((math.MaxUint16 - 31 + i)%math.MaxUint16))
+        assert.Equal(err, nil)
+      } else {
+        assert.Equal(head, (*rtp.Packet)(nil))
+      }
+    }
+	})
+
 }
