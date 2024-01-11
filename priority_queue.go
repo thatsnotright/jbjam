@@ -5,36 +5,37 @@ package jitterbuffer
 
 import (
 	"errors"
+	"github.com/pion/rtp"
 )
 
-type PQ[T any] struct {
-	next   *node[T]
+type PriorityQueue struct {
+	next   *node
 	length uint16
 }
 
-type node[T any] struct {
-	val  *T
-	next *node[T]
-	prev *node[T]
+type node struct {
+	val  *rtp.Packet
+	next *node
+	prev *node
 	prio uint16
 }
 
-func NewQueue[T any]() *PQ[T] {
-	return &PQ[T]{
+func NewQueue() *PriorityQueue {
+	return &PriorityQueue{
 		next:   nil,
 		length: 0,
 	}
 }
 
-func newNode[T any](val *T, prio uint16) *node[T] {
-	return &node[T]{
+func newNode(val *rtp.Packet, prio uint16) *node {
+	return &node{
 		val:  val,
 		prev: nil,
 		next: nil,
 		prio: prio,
 	}
 }
-func (q *PQ[T]) Find(sqNum uint16) (*T, error) {
+func (q *PriorityQueue) Find(sqNum uint16) (*rtp.Packet, error) {
 	if q.next.prio == sqNum {
 		return q.next.val, nil
 	}
@@ -52,7 +53,7 @@ func (q *PQ[T]) Find(sqNum uint16) (*T, error) {
 	return nil, errors.New("Priority item not found")
 }
 
-func (q *PQ[T]) Push(val *T, prio uint16) {
+func (q *PriorityQueue) Push(val *rtp.Packet, prio uint16) {
 	newPq := newNode(val, prio)
 	if q.next == nil {
 		q.next = newPq
@@ -91,11 +92,11 @@ func (q *PQ[T]) Push(val *T, prio uint16) {
 	q.length++
 }
 
-func (q *PQ[T]) Length() uint16 {
+func (q *PriorityQueue) Length() uint16 {
 	return q.length
 }
 
-func (q *PQ[T]) Pop() (*T, error) {
+func (q *PriorityQueue) Pop() (*rtp.Packet, error) {
 	if q.next == nil {
 		return nil, errors.New("Attempt to pop without a current value")
 	}

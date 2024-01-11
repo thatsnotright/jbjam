@@ -13,7 +13,7 @@ func TestPriorityQueue(t *testing.T) {
 	assert := assert.New(t)
 	t.Run("Appends packets in order", func(t *testing.T) {
 		pkt := &rtp.Packet{Header: rtp.Header{SequenceNumber: 5000, Timestamp: 500}, Payload: []byte{0x02}}
-		q := NewQueue[rtp.Packet]()
+		q := NewQueue()
 		q.Push(pkt, pkt.SequenceNumber)
 		pkt2 := &rtp.Packet{Header: rtp.Header{SequenceNumber: 5004, Timestamp: 500}, Payload: []byte{0x02}}
 		q.Push(pkt2, pkt2.SequenceNumber)
@@ -22,12 +22,12 @@ func TestPriorityQueue(t *testing.T) {
 		assert.Equal(q.next.next.prio, uint16(5004))
 	})
 	t.Run("Appends many in order", func(t *testing.T) {
-		q := NewQueue[rtp.Packet]()
+		q := NewQueue()
 		for i := 0; i < 100; i++ {
 			q.Push(&rtp.Packet{Header: rtp.Header{SequenceNumber: uint16(5012 + i), Timestamp: uint32(512 + i)}, Payload: []byte{0x02}}, uint16(5012+i))
 		}
 		assert.Equal(uint16(100), q.Length())
-		last := (*node[rtp.Packet])(nil)
+		last := (*node)(nil)
 		cur := q.next
 		for cur != nil {
 			last = cur
@@ -41,7 +41,7 @@ func TestPriorityQueue(t *testing.T) {
 	})
 	t.Run("Can remove an element", func(t *testing.T) {
 		pkt := &rtp.Packet{Header: rtp.Header{SequenceNumber: 5000, Timestamp: 500}, Payload: []byte{0x02}}
-		q := NewQueue[rtp.Packet]()
+		q := NewQueue()
 		q.Push(pkt, pkt.SequenceNumber)
 		pkt2 := &rtp.Packet{Header: rtp.Header{SequenceNumber: 5004, Timestamp: 500}, Payload: []byte{0x02}}
 		q.Push(pkt2, pkt2.SequenceNumber)
@@ -55,7 +55,7 @@ func TestPriorityQueue(t *testing.T) {
 		assert.Equal(nextPop.SequenceNumber, uint16(5012))
 	})
 	t.Run("Appends in order", func(t *testing.T) {
-		q := NewQueue[rtp.Packet]()
+		q := NewQueue()
 		for i := 0; i < 100; i++ {
 			q.Push(&rtp.Packet{Header: rtp.Header{SequenceNumber: uint16(5012 + i), Timestamp: uint32(512 + i)}, Payload: []byte{0x02}}, uint16(5012+i))
 		}
