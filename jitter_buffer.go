@@ -115,7 +115,7 @@ func (jb *JitterBuffer) emit(event JitterBufferEvent) {
 
 func (jb *JitterBuffer) updateState() {
 	// For now, we only look at the number of packets captured in the play buffer
-	if jb.packets.Length() >= 50 {
+	if jb.packets.Length() >= 50 && jb.state == Buffering {
 		jb.state = Emitting
 		jb.emit(BeginPlayback)
 	}
@@ -154,6 +154,23 @@ func (jb *JitterBuffer) Pop() (*rtp.Packet, error) {
 		return (*rtp.Packet)(nil), err
 	}
 	jb.playout_head = (jb.playout_head + 1) % math.MaxUint16
+	jb.updateState()
+	return packet, nil
+}
+
+// Pop an RTP packet from the jitter buffer at the current playout head
+func (jb *JitterBuffer) PopAtTimestamp(ts uint32) (*rtp.Packet, error) {
+	jb.mutex.Lock()
+	defer jb.mutex.Unlock()
+	if jb.state != Emitting {
+		return nil, errors.New("Attempt to pop while buffering")
+	}
+	packet, err := jb.packets.PopAtTimestamp(ts)
+	if err != nil {
+		jb.stats.underflow_count++
+		jb.emit(BufferUnderflow)
+		return (*rtp.Packet)(nil), err
+	}
 	jb.updateState()
 	return packet, nil
 }

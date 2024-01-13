@@ -64,5 +64,19 @@ func TestJitterBuffer(t *testing.T) {
 			}
 		}
 	})
+t.Run("Pops at timestamp correctly", func(t *testing.T) {
+		jb := New()
+		for i := 0; i < 100; i++ {
+
+			sqnum := uint16((math.MaxUint16 - 32 + i) % math.MaxUint16)
+			jb.Push(&rtp.Packet{Header: rtp.Header{SequenceNumber: sqnum, Timestamp: uint32(512 + i)}, Payload: []byte{0x02}})
+		}
+		assert.Equal(jb.packets.Length(), uint16(100))
+		assert.Equal(jb.state, Emitting)
+		head, err := jb.PopAtTimestamp(uint32(513))
+		assert.Equal(head.SequenceNumber, uint16(math.MaxUint16-32+1))
+		assert.Equal(err, nil)
+	})
+
 
 }
