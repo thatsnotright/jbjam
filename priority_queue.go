@@ -105,3 +105,29 @@ func (q *PriorityQueue) Pop() (*rtp.Packet, error) {
 	q.next = q.next.next
 	return val, nil
 }
+
+func (q *PriorityQueue) PopAt(sqNum uint16) (*rtp.Packet, error) {
+	if q.next == nil {
+		return nil, errors.New("Attempt to pop without a current value")
+	}
+	if q.next.prio == sqNum {
+		val := q.next.val
+		q.next = q.next.next
+		return val, nil
+	}
+	pos := q.next
+	prev := q.next.prev
+	for pos != nil {
+		if pos.prio == sqNum {
+			val := pos.val
+			prev.next = pos.next
+			if prev.next != nil {
+				prev.next.prev = prev
+			}
+			return val, nil
+		}
+		prev = pos
+		pos = pos.next
+	}
+	return nil, errors.New("sequence not found")
+}

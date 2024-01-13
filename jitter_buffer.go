@@ -42,9 +42,8 @@ type Option func(jb *JitterBuffer)
 type JitterBufferEventListener func(event JitterBufferEvent, jb *JitterBuffer)
 
 type JitterBuffer struct {
-	packets             [math.MaxUint16 + 1]*rtp.Packet
+	packets             *PriorityQueue
 	last_sequence       uint16
-	buffer_length       uint16
 	playout_head        uint16
 	playout_ready       bool
 	state               JitterBufferState
@@ -67,7 +66,7 @@ type JitterBufferStats struct {
 
 // New will initialize a jitter buffer and its associated statistics
 func New(opts ...Option) *JitterBuffer {
-	jb := &JitterBuffer{state: Buffering, stats: JitterBufferStats{0, 0, 0, 0, .0, .0}}
+	jb := &JitterBuffer{state: Buffering, stats: JitterBufferStats{0, 0, 0, 0, .0, .0}, packets: NewQueue()}
 	for _, o := range opts {
 		o(jb)
 	}
@@ -83,11 +82,10 @@ func (jb *JitterBuffer) Listen(event JitterBufferEvent, cb JitterBufferEventList
 func (jb *JitterBuffer) updateStats(last_packet_seq_no uint16) {
 	// If we have at least one packet, and the next packet being pushed in is not
 	// at the expected sequence number increment the out of order count
-	if jb.buffer_length > 0 && last_packet_seq_no != ((jb.last_sequence+1)%math.MaxUint16) {
+	if jb.packets.Length() > 0 && last_packet_seq_no != ((jb.last_sequence+1)%math.MaxUint16) {
 		jb.stats.out_of_order_count++
 	}
 	jb.last_sequence = last_packet_seq_no
-	jb.buffer_length++
 
 }
 
@@ -97,15 +95,15 @@ func (jb *JitterBuffer) updateStats(last_packet_seq_no uint16) {
 func (jb *JitterBuffer) Push(packet *rtp.Packet) {
 	jb.mutex.Lock()
 	defer jb.mutex.Unlock()
-	if jb.packets[packet.SequenceNumber] != nil {
+	if jb.packets.Length() > 100 {
 		jb.stats.overflow_count++
 		jb.emit(BufferOverflow)
 	}
-	if !jb.playout_ready && jb.buffer_length == 0 {
+	if !jb.playout_ready && jb.packets.Length() == 0 {
 		jb.playout_head = packet.SequenceNumber
 	}
-	jb.packets[packet.SequenceNumber] = packet
 	jb.updateStats(packet.SequenceNumber)
+	jb.packets.Push(packet, packet.SequenceNumber)
 	jb.updateState()
 }
 
@@ -117,7 +115,7 @@ func (jb *JitterBuffer) emit(event JitterBufferEvent) {
 
 func (jb *JitterBuffer) updateState() {
 	// For now, we only look at the number of packets captured in the play buffer
-	if jb.buffer_length >= 50 {
+	if jb.packets.Length() >= 50 {
 		jb.state = Emitting
 		jb.emit(BeginPlayback)
 	}
@@ -133,13 +131,13 @@ func (jb *JitterBuffer) updateState() {
 func (jb *JitterBuffer) Peek(playoutHead bool) (*rtp.Packet, error) {
 	jb.mutex.Lock()
 	defer jb.mutex.Unlock()
-	if jb.buffer_length < 1 {
+	if jb.packets.Length() < 1 {
 		return nil, errors.New("Invalid Peek: Empty jitter buffer")
 	}
 	if playoutHead && jb.state == Emitting {
-		return jb.packets[jb.playout_head], nil
+		return jb.packets.Find(jb.playout_head)
 	}
-	return jb.packets[jb.last_sequence], nil
+	return jb.packets.Find(jb.last_sequence)
 }
 
 // Pop an RTP packet from the jitter buffer at the current playout head
@@ -149,13 +147,12 @@ func (jb *JitterBuffer) Pop() (*rtp.Packet, error) {
 	if jb.state != Emitting {
 		return nil, errors.New("Attempt to pop while buffering")
 	}
-	if jb.packets[jb.playout_head] == nil {
+	packet, err := jb.packets.PopAt(jb.playout_head)
+	if err != nil {
 		jb.stats.underflow_count++
 		jb.emit(BufferUnderflow)
+		return (*rtp.Packet)(nil), err
 	}
-	var packet = jb.packets[jb.playout_head]
-	jb.packets[jb.playout_head] = nil
-	jb.buffer_length--
 	jb.playout_head = (jb.playout_head + 1) % math.MaxUint16
 	jb.updateState()
 	return packet, nil
