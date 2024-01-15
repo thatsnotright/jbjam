@@ -144,7 +144,7 @@ func (q *PriorityQueue) PopAtTimestamp(timestamp uint32) (*rtp.Packet, error) {
 	pos := q.next
 	prev := q.next.prev
 	for pos != nil {
-		if pos.val.Timestamp == timestamp{
+		if pos.val.Timestamp == timestamp {
 			val := pos.val
 			prev.next = pos.next
 			if prev.next != nil {
